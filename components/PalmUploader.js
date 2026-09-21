@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { classifyHand } from '../lib/handClassifier';
+import { t } from '../lib/i18n';
+import BirthDetailsForm from './BirthDetailsForm';
 import ReadingResult from './ReadingResult';
 
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -27,48 +29,58 @@ function getLandmarker() {
   return landmarkerPromise;
 }
 
-export default function PalmUploader() {
-  const [status, setStatus] = useState('idle'); // idle | detecting | reading | error
+export default function PalmUploader({ language }) {
+  // idle -> detecting -> details -> reading -> result (or -> error at any point)
+  const [status, setStatus] = useState('idle');
   const [error, setError] = useState('');
+  const [classification, setClassification] = useState(null);
   const [reading, setReading] = useState(null);
-  const [language, setLanguage] = useState('en');
   const inputRef = useRef(null);
 
-  const handleFile = useCallback(
-    async (file) => {
+  const handleFile = useCallback(async (file) => {
+    setError('');
+    setReading(null);
+    setStatus('detecting');
+
+    try {
+      const bitmap = await createImageBitmap(file);
+      if (bitmap.width < MIN_DIMENSION || bitmap.height < MIN_DIMENSION) {
+        setStatus('error');
+        setError(t(language, 'errorTooSmall'));
+        return;
+      }
+
+      const landmarker = await getLandmarker();
+      const result = landmarker.detect(bitmap);
+
+      if (!result.landmarks || result.landmarks.length === 0) {
+        setStatus('error');
+        setError(t(language, 'errorNoHand'));
+        return;
+      }
+
+      const classified = classifyHand(result.landmarks[0]);
+      if (!classified) {
+        setStatus('error');
+        setError(t(language, 'errorConfused'));
+        return;
+      }
+
+      setClassification(classified);
+      setStatus('details');
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+      setError(t(language, 'errorGeneric'));
+    }
+  }, [language]);
+
+  const handleDetailsSubmit = useCallback(
+    async (birthDetails) => {
+      if (!classification) return;
+      setStatus('reading');
       setError('');
-      setReading(null);
-      setStatus('detecting');
-
       try {
-        const bitmap = await createImageBitmap(file);
-        if (bitmap.width < MIN_DIMENSION || bitmap.height < MIN_DIMENSION) {
-          setStatus('error');
-          setError(
-            'That photo is too small to read clearly. Please retake it closer up, in good light.'
-          );
-          return;
-        }
-
-        const landmarker = await getLandmarker();
-        const result = landmarker.detect(bitmap);
-
-        if (!result.landmarks || result.landmarks.length === 0) {
-          setStatus('error');
-          setError(
-            "We couldn't clearly find a hand in that photo. Lay your palm flat, fill the frame, and make sure it's well lit, then try again."
-          );
-          return;
-        }
-
-        const classification = classifyHand(result.landmarks[0]);
-        if (!classification) {
-          setStatus('error');
-          setError('Something about that photo confused our detector — please try a different angle.');
-          return;
-        }
-
-        setStatus('reading');
         const res = await fetch('/api/generate-reading', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -76,53 +88,59 @@ export default function PalmUploader() {
             handShape: classification.shape,
             seed: classification.seed,
             language,
+            ...birthDetails,
           }),
         });
 
         if (!res.ok) throw new Error('generate-reading failed');
         const data = await res.json();
-        setReading({ ...data, handShape: classification.shape });
-        setStatus('idle');
+        setReading({ ...data, handShape: classification.shape, name: birthDetails.name });
+        setStatus('result');
       } catch (err) {
         console.error(err);
         setStatus('error');
-        setError('Something went wrong reading that photo. Please try again.');
+        setError(t(language, 'errorGeneric'));
       }
     },
-    [language]
+    [classification, language]
   );
 
-  return (
-    <div className="uploader">
-      <div className="language-row">
-        <label>
-          Reading language:{' '}
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-            <option value="en">English</option>
-            <option value="hi">Hindi</option>
-          </select>
-        </label>
-      </div>
+  const resetToUpload = () => {
+    setStatus('idle');
+    setError('');
+    setClassification(null);
+    setReading(null);
+    if (inputRef.current) inputRef.current.value = '';
+  };
 
-      <label className="drop">
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])}
-          hidden
-        />
-        {status === 'detecting' && 'Reading your palm...'}
-        {status === 'reading' && 'Writing your reading...'}
-        {status === 'idle' && !reading && 'Tap to upload a photo of your open palm'}
-        {status === 'idle' && reading && 'Upload a different photo'}
-        {status === 'error' && 'Try again — tap to upload'}
-      </label>
+  return (
+    <div className="uploader" id="uploader">
+      {status !== 'details' && (
+        <label className="drop" htmlFor="palm-photo-input">
+          <input
+            id="palm-photo-input"
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => e.target.files[0] && handleFile(e.target.files[0])}
+            hidden
+          />
+          {status === 'detecting' && t(language, 'statusDetecting')}
+          {status === 'reading' && t(language, 'statusReading')}
+          {status === 'idle' && !reading && t(language, 'uploadIdle')}
+          {status === 'result' && t(language, 'uploadDifferent')}
+          {status === 'error' && t(language, 'uploadRetry')}
+        </label>
+      )}
 
       {error && <p className="error">{error}</p>}
 
-      {reading && <ReadingResult reading={reading} />}
+      {status === 'details' && (
+        <BirthDetailsForm language={language} onSubmit={handleDetailsSubmit} onBack={resetToUpload} />
+      )}
+
+      {status === 'result' && reading && <ReadingResult language={language} reading={reading} />}
     </div>
   );
 }

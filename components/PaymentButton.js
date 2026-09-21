@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { t } from '../lib/i18n';
 
-const AMOUNT_INR = 49;
+const AMOUNT_INR = 99;
 
 function loadRazorpayScript() {
   return new Promise((resolve, reject) => {
@@ -15,7 +16,7 @@ function loadRazorpayScript() {
   });
 }
 
-export default function PaymentButton({ reportId, onUnlocked }) {
+export default function PaymentButton({ language, reportId, onUnlocked }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -39,7 +40,7 @@ export default function PaymentButton({ reportId, onUnlocked }) {
         currency: order.currency,
         order_id: order.orderId,
         name: 'Palmara',
-        description: 'Unlock full palm reading',
+        description: 'Unlock full reading',
         handler: async (response) => {
           try {
             const verifyRes = await fetch('/api/verify-payment', {
@@ -57,9 +58,7 @@ export default function PaymentButton({ reportId, onUnlocked }) {
             onUnlocked(full);
           } catch (err) {
             console.error(err);
-            setError(
-              'Payment succeeded but unlocking failed — refresh and contact us with your payment ID.'
-            );
+            setError(t(language, 'payErrorVerify'));
           } finally {
             setLoading(false);
           }
@@ -67,26 +66,30 @@ export default function PaymentButton({ reportId, onUnlocked }) {
         modal: {
           ondismiss: () => setLoading(false),
         },
-        theme: { color: '#5b3a9b' },
+        theme: { color: '#b48cff' },
       });
 
       rzp.on('payment.failed', () => {
-        setError('Payment failed — please try again.');
+        setError(t(language, 'payErrorFailed'));
         setLoading(false);
       });
 
       rzp.open();
     } catch (err) {
       console.error(err);
-      setError('Could not start payment — please try again.');
+      setError(t(language, 'payErrorStart'));
       setLoading(false);
     }
   };
 
   return (
     <div>
+      <div className="price-row">
+        <span className="price-original">{t(language, 'priceOriginal')}</span>
+        <span className="price-final">{t(language, 'priceFinal')}</span>
+      </div>
       <button onClick={pay} disabled={loading} className="pay-button">
-        {loading ? 'Opening checkout...' : `Unlock full reading — ₹${AMOUNT_INR}`}
+        {loading ? t(language, 'payButtonLoading') : t(language, 'unlockButton')}
       </button>
       {error && <p className="error">{error}</p>}
     </div>
