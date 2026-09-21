@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '../../../../lib/supabaseAdmin';
-import { generatePalmReading, UNLOCK_DELIMITER } from '../../../../lib/anthropic';
-import { HAND_SHAPE_MEANINGS } from '../../../../lib/handClassifier';
+import { supabaseAdmin } from '../../../lib/supabaseAdmin';
+import { generatePalmReading, UNLOCK_DELIMITER } from '../../../lib/anthropic';
+import { HAND_SHAPE_MEANINGS } from '../../../lib/handClassifier';
 
 const VALID_SHAPES = Object.keys(HAND_SHAPE_MEANINGS);
 
