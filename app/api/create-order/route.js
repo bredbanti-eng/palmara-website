@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { razorpayClient } from '../../../../lib/razorpayClient';
+import { razorpayClient } from '../../../lib/razorpayClient';
 
 export async function POST(req) {
     try {
